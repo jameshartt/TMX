@@ -31,7 +31,13 @@ function processImportData(data: string, tournamentIds: string[], table: any): v
       // sendTournament errors are surfaced via toast (preserves the
       // jim-tennis-deploy 50b60c51 behaviour: no IndexedDB-only ghosts).
       sendTournament({ tournamentRecord }).then(
-        () => addTournament({ tournamentRecord, tournamentIds, table }),
+        (response: any) => {
+          // jim-tennis-deploy (f16e8751): server returns errors as 200 with
+          // { error: "..." } in the body, so the promise resolves either way.
+          // Skip local persist when the body contains an error.
+          if (response?.data?.error) return;
+          addTournament({ tournamentRecord, tournamentIds, table });
+        },
         () => {
           tmxToast({ message: t('common.error'), intent: 'is-danger' });
         },
