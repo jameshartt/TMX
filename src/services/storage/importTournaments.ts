@@ -37,7 +37,10 @@ export function importTournaments({ table }: { table: any }): void {
 
         if (result.success) {
           sendTournament({ tournamentRecord }).then(
-            () => addTournament({ tournamentRecord, tournamentIds, table }),
+            (response) => {
+              if (response?.data?.error) return;
+              addTournament({ tournamentRecord, tournamentIds, table });
+            },
             () => {
               tmxToast({ message: t('common.error'), intent: 'is-danger' });
             },
