@@ -21,7 +21,11 @@ axiosInstance.interceptors.request.use(
 
 axiosInstance.interceptors.response.use(
   (response) => {
-    if (response.data?.error) tmxToast({ message: response.data.error?.message, intent: 'is-danger' });
+    if (response.data?.error) {
+      const error = response.data.error;
+      const message = typeof error === 'string' ? error : error?.message;
+      tmxToast({ message, intent: 'is-danger' });
+    }
     return response;
   },
   (error) => {
