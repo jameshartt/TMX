@@ -140,7 +140,10 @@ function createToast(options: ToastOptions): { element: HTMLElement } {
     actionButton.style.cssText = 'margin-left: 1em;';
     actionButton.className = options.type === 'is-danger' ? 'button is-light' : 'button';
     actionButton.innerHTML = options.action.text || 'OK';
-    actionButton.addEventListener('click', options.action.onClick!);
+    actionButton.addEventListener('click', (e) => {
+      e.stopPropagation();
+      options.action!.onClick!();
+    });
     container.appendChild(actionButton);
   }
 

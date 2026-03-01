@@ -36,15 +36,23 @@ function tmxMessage(data: any): void {
 }
 
 export function connectSocket(callback?: () => void): void {
-  const connectionOptions: any = {
-    transportOptions: { polling: { extraHeaders: getAuthorization() } },
-    'force new connection': true,
-    reconnectionDelay: 1000,
-    reconnectionAttempts: 'Infinity',
-    timeout: 20000,
-  };
+  // Clean up any stale disconnected socket before creating a new one
+  if (oi.socket && !oi.socket.connected) {
+    oi.socket.removeAllListeners();
+    oi.socket.disconnect();
+    oi.socket = undefined;
+  }
+
   if (!oi.socket) {
-    const socketPath = env.socketPath || process.env.SERVER || window.location.origin;
+    const connectionOptions: any = {
+      transportOptions: { polling: { extraHeaders: getAuthorization() } },
+      transports: ['polling'],
+      'force new connection': true,
+      reconnectionDelay: 1000,
+      reconnectionAttempts: 5,
+      timeout: 20000,
+    };
+    const socketPath = env.socketPath || window.location.origin;
     const connectionString = `${socketPath}/tmx`;
     oi.socket = io(connectionString, connectionOptions);
     oi.socket.on('ack', receiveAcknowledgement);
@@ -53,23 +61,30 @@ export function connectSocket(callback?: () => void): void {
     oi.socket.on('connect', () => connectionEvent(callback));
     oi.socket.on('disconnect', () => console.log('disconnect'));
     oi.socket.on('timestamp', (data: any) => (oi.timestampOffset = new Date().getTime() - data.timestamp));
-    oi.socket.on('connect_error', (data: any) => {
-      console.log('connection error:', { data });
+    oi.socket.on('exception', (err: any) => {
+      console.log('socket exception:', err);
+      tmxToast({ message: err?.message || t('toasts.notLoggedIn'), intent: 'is-warning' });
+    });
+    oi.socket.on('connect_error', (err: any) => {
+      console.log('socket connect_error:', err?.message);
+    });
+    oi.socket.io.on('reconnect_failed', () => {
       tmxToast({ message: t('toasts.connectionError'), intent: 'is-danger' });
       disconnectSocket();
     });
-  } else {
-    console.log('socket exists');
   }
 }
 
 export function connected(): boolean {
-  return !!oi.socket;
+  return !!oi.socket?.connected;
 }
 
 export function disconnectSocket(): void {
-  oi?.socket?.disconnect();
-  setTimeout(() => delete oi.socket, 1000);
+  if (oi.socket) {
+    oi.socket.removeAllListeners();
+    oi.socket.disconnect();
+    oi.socket = undefined;
+  }
 }
 
 export function emitTmx({ data, ackCallback }: { data: any; ackCallback?: (ack: any) => void }): void {
@@ -96,7 +111,7 @@ export function emitTmx({ data, ackCallback }: { data: any; ackCallback?: (ack: 
     socketEmit(messageType, data);
   };
 
-  if (oi.socket) {
+  if (oi.socket?.connected) {
     action();
   } else {
     try {

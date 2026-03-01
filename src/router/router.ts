@@ -1,13 +1,16 @@
 import { registrationModal } from 'components/modals/registrationModal';
 import { displayTournament } from 'pages/tournament/tournamentDisplay';
 import { tmxTournaments } from 'pages/tournaments/tournaments';
+import { getLoginState } from 'services/authentication/loginState';
 import { showSplash } from 'services/transitions/screenSlaver';
 import { destroyTables } from 'pages/tournament/destroyTable';
 import { renderCalendar } from 'pages/tournaments/calendar';
 import { renderAdminPage } from 'pages/admin/renderAdminPage';
 import { renderSystemPage } from 'pages/system/renderSystemPage';
+import { tmxToast } from 'services/notifications/tmxToast';
 import { queueKey } from 'services/messaging/socketIo';
 import { context } from 'services/context';
+import { t } from 'i18n';
 import Navigo from 'navigo';
 
 import {
@@ -35,7 +38,15 @@ export function routeTMX() {
   // make accessible
   context.router = router;
 
+  const requireAuth = (): boolean => {
+    if (getLoginState()) return true;
+    tmxToast({ message: t('toasts.notLoggedIn'), intent: 'is-warning' });
+    router.navigate(`/${TMX_TOURNAMENTS}`);
+    return false;
+  };
+
   const displayRoute = ({ selectedTab, renderDraw, data }: any) => {
+    if (!requireAuth()) return;
     destroyTables();
     displayTournament({ config: { selectedTab, renderDraw, ...data } }); // ...data must come last
   };
@@ -100,10 +111,10 @@ export function routeTMX() {
 
   router.on(`/${INVITE}/:inviteKey`, registrationModal);
 
-  router.on(`/calendar`, renderCalendar);
-  router.on('/admin', renderAdminPage);
-  router.on(`/${SYSTEM}/:selectedTab`, (match) => renderSystemPage(match?.data?.selectedTab));
-  router.on(`/${SYSTEM}`, () => renderSystemPage());
+  router.on(`/calendar`, () => requireAuth() && renderCalendar());
+  router.on('/admin', () => requireAuth() && renderAdminPage());
+  router.on(`/${SYSTEM}/:selectedTab`, (match) => requireAuth() && renderSystemPage(match?.data?.selectedTab));
+  router.on(`/${SYSTEM}`, () => requireAuth() && renderSystemPage());
 
   router.on(`/actionKey/:key`, (match) => {
     const key = match?.data?.key;

@@ -1,9 +1,7 @@
 /**
  * Tournament actions modal for managing tournament state.
- * Handles upload, claim, offline/online mode, and export operations.
+ * Handles upload, claim, and export operations.
  */
-import { saveTournamentRecord } from 'services/storage/saveTournamentRecord';
-import { mutationRequest } from 'services/mutation/mutationRequest';
 import { getLoginState } from 'services/authentication/loginState';
 import { tournamentEngine } from 'tods-competition-factory';
 import { sendTournament } from 'services/apis/servicesApi';
@@ -19,12 +17,10 @@ import { tmx2db } from 'services/storage/tmx2db';
 import { context } from 'services/context';
 import { t } from 'i18n';
 
-import { ADD_TOURNAMENT_TIMEITEM } from 'constants/mutationConstants';
 import { ADMIN } from 'constants/tmxConstants';
 
 export function tournamentActions(): void {
   const tournamentRecord = tournamentEngine.getTournament().tournamentRecord;
-  const offline = tournamentRecord?.timeItems?.find(({ itemType }: any) => itemType === 'TMX')?.itemValue?.offline;
   const provider = tournamentRecord?.parentOrganisation;
   const providerId = provider?.organisationId;
   const state = getLoginState();
@@ -66,39 +62,6 @@ export function tournamentActions(): void {
         };
         sendTournament({ tournamentRecord }).then(successClaim, failureClaim);
       }
-    }
-
-    if (inputs.action.value === 'goOffline' && state?.provider) {
-      const postMutation = (result: any) => {
-        if (result?.success) {
-          saveTournamentRecord();
-          const dnav = document.getElementById('dnav');
-          if (dnav) dnav.style.backgroundColor = 'var(--tmx-bg-highlight)';
-          tmxToast({ message: t('modals.tournamentActions.offline'), intent: 'is-info' });
-        }
-      };
-      changeOnlineState({ postMutation, state, offline: true });
-    }
-
-    if (inputs.action.value === 'goOnline' && state?.provider) {
-      const postMutation = (result: any) => {
-        if (result?.success) {
-          const successOnline = () => {
-            tmx2db.deleteTournament(tournamentRecord.tournamentId);
-            const dnav = document.getElementById('dnav');
-            if (dnav) dnav.style.backgroundColor = '';
-            tmxToast({ message: t('modals.tournamentActions.online'), intent: 'is-info' });
-          };
-          const failureOnline = (err: any) => {
-            console.log({ err });
-            changeOnlineState({ state, offline: true });
-          };
-
-          const updatedTournamentRecord = tournamentEngine.getTournament().tournamentRecord;
-          sendTournament({ tournamentRecord: updatedTournamentRecord }).then(successOnline, failureOnline);
-        }
-      };
-      changeOnlineState({ postMutation, state, offline: false });
     }
 
     if (inputs.action.value === 'utrExport') downloadUTRmatches();
@@ -143,8 +106,6 @@ export function tournamentActions(): void {
     tournamentRecord &&
       !providerId &&
       state?.provider && { label: t('modals.tournamentActions.claimTournament'), value: 'claim', close: true },
-    providerId && !offline && { label: t('modals.tournamentActions.goOffline'), value: 'goOffline', close: true },
-    providerId && offline && { label: t('modals.tournamentActions.goOnline'), value: 'goOnline', close: true },
     tournamentRecord && admin && { label: t('modals.tournamentActions.exportUtr'), value: 'utrExport' },
     tournamentRecord && admin && { label: t('modals.tournamentActions.exportTods'), value: 'todsExport' },
   ].filter(Boolean);
@@ -181,27 +142,5 @@ export function tournamentActions(): void {
         close: true,
       },
     ],
-  });
-}
-
-function changeOnlineState({
-  postMutation,
-  state,
-  offline,
-}: {
-  postMutation?: (result: any) => void;
-  state: any;
-  offline: boolean;
-}): void {
-  const itemValue = { ...tournamentEngine.getTournamentTimeItem({ itemType: 'TMX' })?.timeItem?.itemValue };
-  if (offline) {
-    itemValue.offline = { email: state.email };
-  } else {
-    delete itemValue.offline;
-  }
-  const timeItem = { itemType: 'TMX', itemValue };
-  mutationRequest({
-    methods: [{ method: ADD_TOURNAMENT_TIMEITEM, params: { removePriorValues: true, timeItem } }],
-    callback: postMutation,
   });
 }

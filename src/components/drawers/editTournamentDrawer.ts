@@ -10,6 +10,7 @@ import { getProvider, sendTournament } from 'services/apis/servicesApi';
 import { mutationRequest } from 'services/mutation/mutationRequest';
 import { getLoginState } from 'services/authentication/loginState';
 import { tournamentEngine } from 'tods-competition-factory';
+import { tmxToast } from 'services/notifications/tmxToast';
 import { getParent } from 'services/dom/parentAndChild';
 import { context } from 'services/context';
 import { t } from 'i18n';
@@ -170,24 +171,24 @@ export function editTournament({
       ];
       mutationRequest({ tournamentRecord: updatedTournamentRecord, methods, callback: postMutation });
     } else {
+      const state = getLoginState();
+      if (!state?.providerId) {
+        tmxToast({ message: t('toasts.notLoggedIn'), intent: 'is-warning' });
+        return;
+      }
       const result = tournamentEngine.newTournamentRecord({ tournamentName, activeDates, startDate, endDate });
       if (result.success) {
-        const state = getLoginState();
         const newTournamentRecord = tournamentEngine.getTournament()?.tournamentRecord;
-        if (state?.providerId) {
-          const addProvider = (result: any) => {
-            const provider = result.data?.provider;
-            newTournamentRecord.parentOrganisation = provider;
-            if (provider) {
-              const report = (result: any) => console.log('sendTournament', result);
-              sendTournament({ tournamentRecord: newTournamentRecord }).then(() => {}, report);
-            }
-            completeTournamentAdd({ tournamentRecord: newTournamentRecord, table, onCreated });
-          };
-          getProvider({ providerId: state.providerId }).then(addProvider);
-        } else {
+        const addProvider = (result: any) => {
+          const provider = result.data?.provider;
+          newTournamentRecord.parentOrganisation = provider;
+          if (provider) {
+            const report = (result: any) => console.log('sendTournament', result);
+            sendTournament({ tournamentRecord: newTournamentRecord }).then(() => {}, report);
+          }
           completeTournamentAdd({ tournamentRecord: newTournamentRecord, table, onCreated });
-        }
+        };
+        getProvider({ providerId: state.providerId }).then(addProvider);
       }
     }
   };

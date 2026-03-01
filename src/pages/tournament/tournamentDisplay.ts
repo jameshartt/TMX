@@ -18,7 +18,6 @@ import { requestTournament } from 'services/apis/servicesApi';
 import { tournamentEngine } from 'tods-competition-factory';
 import { displayTab } from './container/tournamentContent';
 import { tmxToast } from 'services/notifications/tmxToast';
-import { tmx2db } from 'services/storage/tmx2db';
 import { t } from 'i18n';
 import { context } from 'services/context';
 import { highlightTab } from 'navigation';
@@ -42,7 +41,7 @@ export function displayTournament({ config }: { config?: any } = {}): void {
     routeTo(config);
   } else {
     context.ee.emit(LEAVE_TOURNAMENT, (context as any).tournamentId);
-    tmx2db.findTournament(config.tournamentId).then((tournamentRecord: any) => loadTournament({ tournamentRecord, config }));
+    loadTournament({ config });
   }
 }
 
@@ -83,7 +82,7 @@ export function routeTo(config: any): void {
   }
 }
 
-export function loadTournament({ tournamentRecord, config }: { tournamentRecord?: any; config: any }): void {
+export function loadTournament({ config }: { config: any }): void {
   const state = getLoginState();
   const provider = state?.provider || context?.provider;
 
@@ -109,22 +108,18 @@ export function loadTournament({ tournamentRecord, config }: { tournamentRecord?
   };
 
   if (provider) {
-    const tryLocal = () => {
-      if (tournamentRecord) {
-        tournamentEngine.setState(tournamentRecord);
-        renderTournament({ config });
-      } else {
-        notFound();
-      }
-    };
-
     if (config.tournamentId) {
-      const offline = tournamentRecord?.timeItems?.find(({ itemType }: any) => itemType === 'TMX')?.itemValue?.offline;
-      if (offline) return tryLocal();
-      requestTournament({ tournamentId: config.tournamentId }).then(showResult, tryLocal);
+      requestTournament({ tournamentId: config.tournamentId }).then(showResult, () => {
+        tmxToast({ message: t('toasts.serverNotResponding'), intent: 'is-danger' });
+      });
     }
   } else {
-    tournamentEngine.setState(tournamentRecord);
-    renderTournament({ config });
+    tmxToast({
+      message: t('toasts.notLoggedIn'),
+      intent: 'is-warning',
+      onClose: () => {
+        context.router?.navigate('/tournaments');
+      },
+    });
   }
 }

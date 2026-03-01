@@ -5,6 +5,11 @@ import { openModal } from './baseModal/baseModal';
 import { context } from 'services/context';
 import { t } from 'i18n';
 
+// Override courthive-components' passwordValidator which enforces an
+// undisclosed 12-char max and mandatory special characters.
+// Our rule: 8+ characters, no upper limit.
+const passwordValidator = (value: string) => value?.length >= 8;
+
 export function registrationModal(params) {
   let inputs;
 
@@ -15,7 +20,7 @@ export function registrationModal(params) {
     if (registerButton) {
       const isValid =
         passwordMatch(inputs['passwordConfirm'].value) &&
-        validators.passwordValidator(inputs['password'].value) &&
+        passwordValidator(inputs['password'].value) &&
         validators.nameValidator(2)(inputs['givenName'].value) &&
         validators.nameValidator(2)(inputs['lastName'].value);
 
@@ -59,7 +64,7 @@ export function registrationModal(params) {
           error: t('modals.registration.passwordError'),
           placeholder: t('modals.registration.passwordPlaceholder'),
           iconLeft: 'fa-solid fa-lock',
-          validator: validators.passwordValidator,
+          validator: passwordValidator,
           autocomplete: 'off',
           label: t('modals.registration.passwordLabel'),
           field: 'password',

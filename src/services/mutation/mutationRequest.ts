@@ -1,9 +1,8 @@
 /**
- * Mutation request handler with server and local execution.
- * Handles tournament modifications with authentication and permission checks.
+ * Mutation request handler — server-only execution.
+ * All mutations go through the server; local engine execution happens after server acknowledgement.
  */
 import { getLoginState, styleLogin } from 'services/authentication/loginState';
-import { saveTournamentRecord } from 'services/storage/saveTournamentRecord';
 import { tmxToast } from 'services/notifications/tmxToast';
 import { emitTmx } from 'services/messaging/socketIo';
 import * as factory from 'tods-competition-factory';
@@ -14,6 +13,7 @@ import { t } from 'i18n';
 import dayjs from 'dayjs';
 
 // constants
+import { SET_TOURNAMENT_DATES } from 'constants/mutationConstants';
 import { SUPER_ADMIN, TOURNAMENT_ENGINE } from 'constants/tmxConstants';
 
 interface MutationParams {
@@ -45,36 +45,37 @@ export async function mutationRequest(params: MutationParams): Promise<void> {
   const getProviderId = (tournamentRecord: any) => tournamentRecord?.parentOrganisation?.organisationId;
   const tournamentRecords = factoryEngine.getState()?.tournamentRecords ?? {};
 
-  const getOffline = (tournamentRecord: any) =>
-    tournamentRecord.timeItems?.find(({ itemType }: any) => itemType === 'TMX')?.itemValue?.offline;
-
-  const offlineValues = Object.values(tournamentRecords)?.map(getOffline).filter(Boolean);
-  const invalidOffline =
-    offlineValues.length > 1 && !offlineValues.every((v: any) => !v.email || v.email === offlineValues[0].email);
-  if (invalidOffline) return tmxToast({ message: t('toasts.notAllOffline'), intent: 'is-danger' });
-  const offline = offlineValues.length;
-
   const tournamentIds = Object.values(tournamentRecords)?.map((record: any) => record.tournamentId);
-  const providerIds = factory.tools.unique(Object.values(tournamentRecords)?.map(getProviderId)).filter(Boolean);
+  let providerIds = factory.tools.unique(Object.values(tournamentRecords)?.map(getProviderId)).filter(Boolean);
   if (providerIds.length > 1) return tmxToast({ message: t('toasts.multipleProviders'), intent: 'is-danger' });
 
-  const now = new Date().getTime();
-  const inDateRange = Object.values(tournamentRecords).every((record: any) => {
-    const endTime = dayjs(record.endDate).endOf('day').valueOf();
-    return !!(endTime && endTime >= now);
-  });
+  // Fall back to login state provider when tournament record lacks parentOrganisation
+  if (!providerIds.length) {
+    const stateProviderId = state?.provider?.organisationId || state?.providerId;
+    if (stateProviderId) providerIds = [stateProviderId];
+  }
 
-  const mutate = (saveLocal?: boolean) =>
-    makeMutation({ offline, methods, factoryEngine, tournamentIds, completion, saveLocal });
+  const isDateChange = methods.some((m: any) => m.method === SET_TOURNAMENT_DATES);
+  const now = new Date().getTime();
+  const inDateRange =
+    isDateChange ||
+    Object.values(tournamentRecords).every((record: any) => {
+      const endTime = dayjs(record.endDate).endOf('day').valueOf();
+      return !!(endTime && endTime >= now);
+    });
+
+  const mutate = () => makeMutation({ methods, factoryEngine, tournamentIds, completion });
   if (!inDateRange) {
     queryDateRange({ state, providerIds, mutate });
     return;
   }
-  if (providerIds.length && !offline) {
+  if (providerIds.length) {
     checkPermissions({ state, providerIds, mutate });
     return;
   }
-  await mutate(true);
+
+  // No provider and not logged in
+  tmxToast({ message: t('toasts.notLoggedIn'), intent: 'is-warning' });
 }
 
 function queryDateRange({
@@ -84,7 +85,7 @@ function queryDateRange({
 }: {
   state: any;
   providerIds: string[];
-  mutate: (saveLocal?: boolean) => Promise<void>;
+  mutate: () => Promise<void>;
 }): void {
   const onClick = () => (providerIds?.length ? checkPermissions({ state, providerIds, mutate }) : mutate());
   return tmxToast({
@@ -103,7 +104,7 @@ function checkPermissions({
 }: {
   state: any;
   providerIds: string[];
-  mutate: (saveLocal?: boolean) => Promise<void>;
+  mutate: () => Promise<void>;
 }): void {
   if (!state) {
     context.provider = undefined;
@@ -121,7 +122,7 @@ function checkPermissions({
   if (!isProvider && isSuperAdmin && !impersonating) {
     const impersonateProvider = () => {
       context.provider = { organisationId: providerIds[0] };
-      return mutate(false);
+      return mutate();
     };
 
     return tmxToast({
@@ -134,8 +135,7 @@ function checkPermissions({
     });
   }
 
-  const saveLocal = !isProvider && !(isSuperAdmin && impersonating);
-  mutate(saveLocal);
+  mutate();
 }
 
 function engineExecution({ factoryEngine, methods }: { factoryEngine: any; methods: any[] }): any {
@@ -144,28 +144,20 @@ function engineExecution({ factoryEngine, methods }: { factoryEngine: any; metho
   return factoryEngine.executionQueue(directives, true) || {};
 }
 
-async function localSave(saveLocal: boolean): Promise<void> {
-  if (saveLocal || env.saveLocal) {
-    await saveTournamentRecord();
-  }
-}
-
 async function makeMutation({
-  offline,
   methods,
   completion,
   factoryEngine,
   tournamentIds,
-  saveLocal,
 }: {
-  offline: any;
   methods: any[];
   completion: (result?: any) => void;
   factoryEngine: any;
   tournamentIds: string[];
-  saveLocal?: boolean;
 }): Promise<void> {
-  const hasProvider = factoryEngine.getTournament().tournamentRecord?.parentOrganisation?.organisationId;
+  const hasProvider =
+    factoryEngine.getTournament().tournamentRecord?.parentOrganisation?.organisationId ||
+    getLoginState()?.provider?.organisationId;
   if (window['dev']?.params) {
     for (const method of methods) {
       if (window['dev'].params[method.method]) {
@@ -176,52 +168,35 @@ async function makeMutation({
 
   if (window?.['dev']?.getContext().internal) console.log({ methods });
 
-  const executeLocalFirst = !env.serverFirst || !hasProvider;
+  if (!hasProvider) {
+    tmxToast({ message: t('toasts.notLoggedIn'), intent: 'is-warning' });
+    return completion();
+  }
 
-  let factoryResult: any;
-  if (executeLocalFirst || offline) {
-    factoryResult = engineExecution({ factoryEngine, methods });
-    if (factoryResult.error) return completion(factoryResult);
-    if (!hasProvider || offline) {
-      await localSave(true);
+  // Server-first: send to server, execute locally on acknowledgement
+  let ackReceived = false;
+  let timedOut = false;
+  const ackCallback = (ack: any) => {
+    if (timedOut) return;
+    ackReceived = true;
+    const missingTournament = ack?.error?.code === 'ERR_MISSING_TOURNAMENT';
+    if (ack?.success || missingTournament) {
+      const factoryResult = engineExecution({ factoryEngine, methods });
+      if (factoryResult.error) return completion(factoryResult);
       return completion(factoryResult);
-    }
-  }
-
-  if (hasProvider && (factoryResult?.success || env.serverFirst)) {
-    let ackReceived = false;
-    let timedOut = false;
-    const ackCallback = (ack: any) => {
-      if (timedOut) return;
-      ackReceived = true;
-      const missingTournament = ack?.error?.code === 'ERR_MISSING_TOURNAMENT';
-      if (env.serverFirst && (ack?.success || missingTournament)) {
-        (async () => {
-          factoryResult = engineExecution({ factoryEngine, methods });
-          if (factoryResult.error) return completion(factoryResult);
-          await localSave(saveLocal || missingTournament);
-          return completion(factoryResult);
-        })();
-      } else if (env.serverFirst && !executeLocalFirst) {
-        completion(ack?.error ? ack : { error: { message: 'Server rejected mutation' } });
-      }
-    };
-    if (env.log?.verbose) console.log('%c invoking remote', 'color: lightblue');
-    emitTmx({
-      data: { type: 'executionQueue', payload: { methods, tournamentIds, rollbackOnError: true } },
-      ackCallback,
-    });
-    if (executeLocalFirst) {
-      await localSave(saveLocal || false);
     } else {
-      setTimeout(() => {
-        if (ackReceived) return;
-        timedOut = true;
-        tmxToast({ message: t('toasts.serverNotResponding'), intent: 'is-danger' });
-        completion({ error: { message: 'Server not responding' } });
-      }, env.serverTimeout ?? 10000);
+      completion(ack?.error ? ack : { error: { message: 'Server rejected mutation' } });
     }
-  }
-
-  if (executeLocalFirst) return completion(factoryResult);
+  };
+  if (env.log?.verbose) console.log('%c invoking remote', 'color: lightblue');
+  emitTmx({
+    data: { type: 'executionQueue', payload: { methods, tournamentIds, rollbackOnError: true } },
+    ackCallback,
+  });
+  setTimeout(() => {
+    if (ackReceived) return;
+    timedOut = true;
+    tmxToast({ message: t('toasts.serverNotResponding'), intent: 'is-danger' });
+    completion({ error: { message: 'Server not responding' } });
+  }, env.serverTimeout ?? 10000);
 }

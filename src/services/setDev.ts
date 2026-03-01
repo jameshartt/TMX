@@ -73,7 +73,7 @@ export function setDev(): void {
         if (result?.success) {
           tmxToast({ message: t('common.success'), intent: 'is-success' });
           const tournamentRecord = factory.tournamentEngine.getTournament().tournamentRecord;
-          loadTournament({ tournamentRecord, config: { selectedTab: TOURNAMENT } });
+          loadTournament({ config: { selectedTab: TOURNAMENT, tournamentId: tournamentRecord.tournamentId } });
         } else {
           tmxToast({ message: result?.error?.message ?? t('common.error'), intent: 'is-danger' });
           console.log({ result });
@@ -92,7 +92,7 @@ export function setDev(): void {
         console.log({ error: result.error });
       } else {
         const tournamentRecord = result?.data?.tournamentRecords?.[tournamentId];
-        if (tournamentRecord) loadTournament({ tournamentRecord, config: { selectedTab: TOURNAMENT } });
+        if (tournamentRecord) loadTournament({ config: { selectedTab: TOURNAMENT, tournamentId } });
       }
     });
   };
