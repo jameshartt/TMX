@@ -90,7 +90,27 @@ export function createTournamentsTable(): { table: any } {
       if (result?.data?.calendar) {
         renderCalendarTable(result.data.calendar);
       } else {
-        tmxToast({ message: t('toasts.serverNotResponding'), intent: 'is-danger' });
+        // No calendar data — show welcome view with functional handlers
+        destroyTable({ anchorId: TOURNAMENTS_TABLE });
+        const calendarAnchor = document.getElementById(TOURNAMENTS_TABLE);
+        const controlEl = document.getElementById(TOURNAMENTS_CONTROL);
+        if (controlEl) controlEl.innerHTML = '';
+        if (calendarAnchor) {
+          renderWelcomeView(calendarAnchor, {
+            onGenerate: () => {
+              const options = [...EXAMPLE_TOURNAMENT_CATALOG, { label: 'All', value: -1 }];
+              listPicker({
+                options,
+                callback: ({ selection }: any) => {
+                  const value = selection?.selection?.value;
+                  const indices = value === -1 ? undefined : [value];
+                  mockTournaments(undefined, () => createTournamentsTable(), indices);
+                },
+              });
+            },
+            onCreate: () => editTournament({ onCreated: () => createTournamentsTable() }),
+          });
+        }
       }
     };
     getCalendar({ providerAbbr: provider.organisationAbbreviation }).then(showResults);
