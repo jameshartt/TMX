@@ -38,10 +38,12 @@ allowBuilds:
   cypress: false            # large browser binary; e2e via Playwright instead
   electron: false           # ~250MB binary; only needed for desktop mode
 
+# jim-tennis-deploy: upstream's `link:../X` overrides assume sibling repos
+# checked out next to TMX (provider-config, scoringVisualizations,
+# courthive-components, pdf-factory, factory). Removed for the prod deploy
+# build, which fetches all packages from the npm registry instead.
 overrides:
   typescript: 6.0.3 # block native TS7 (no classic JS API — crashes tsc/nest/sonarjs); pairs with renovate TS-major block
-  '@courthive/provider-config': link:../provider-config
-  '@courthive/scoring-visualizations': link:../scoringVisualizations
   '@xmldom/xmldom': ^0.9.0
   # SCOPED EXCEPTION to the line above. The blanket ^0.9.0 override (a security
   # bump) also captures `plist`, which declares ^0.8.8 and calls
@@ -57,16 +59,13 @@ overrides:
   'brace-expansion@1': ^5.0.0
   'brace-expansion@2': ^5.0.0
   'brace-expansion@>=4 <5.0.5': ^5.0.5
-  courthive-components: link:../courthive-components
   dompurify: ^3.4.12 # GHSA (XSS); transitive via jspdf (^3.3.1). patched 3.4.12
   # A security FLOOR, not a range. It was '^4.0.0' for an earlier advisory and stopped being
   # a floor when four more landed INSIDE 4.x (host confusion x2, SSRF x2), all first patched
   # in 4.1.3 while the lockfile sat on 4.1.2. Pin the floor to the patched version.
   fast-uri: '^4.1.3'
   follow-redirects: ^1.16.0
-  pdf-factory: link:../pdf-factory
   picomatch: ^4.0.4
   socket.io-parser: ^4.2.6
-  tods-competition-factory: link:../factory
   undici: ^8.0.0
   ws: ^8.20.1
