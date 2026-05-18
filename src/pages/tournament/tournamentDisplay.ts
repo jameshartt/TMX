@@ -270,9 +270,13 @@ export function loadTournament({ tournamentRecord, config }: { tournamentRecord?
       requestTournament({ tournamentId: config.tournamentId, silent: true }).then(showResult, tryLocal);
     }
   } else {
-    tournamentEngine.setState(tournamentRecord);
-    runActiveScaleAutoSwitch();
-    renderTournament({ config });
+    tmxToast({
+      message: t('toasts.notLoggedIn'),
+      intent: 'is-warning',
+      onClose: () => {
+        context.router?.navigate('/tournaments');
+      },
+    });
   }
 }
 

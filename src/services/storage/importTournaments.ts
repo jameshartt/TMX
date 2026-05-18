@@ -1,8 +1,11 @@
 /**
  * Import tournament records from file via dropzone modal or native dialog.
  * Parses TODS JSON and adds tournaments to calendar table with conflict handling.
+ * Requires authentication — imported tournaments are sent to the server.
  */
 import { mapTournamentRecord } from 'pages/tournaments/mapTournamentRecord';
+import { getLoginState } from 'services/authentication/loginState';
+import { sendTournament } from 'services/apis/servicesApi';
 import { addOrUpdateTournament } from './addOrUpdateTournament';
 import { dropzoneModal } from 'components/modals/dropzoneModal';
 import { tournamentEngine } from 'services/factory/engine';
@@ -24,7 +27,15 @@ function processImportData(data: string, tournamentIds: string[], table: any): v
     result = tournamentEngine.setState(tournamentRecord);
 
     if (result.success) {
-      addTournament({ tournamentRecord, tournamentIds, table });
+      // Server-first import: only persist locally after the server accepts.
+      // sendTournament errors are surfaced via toast (preserves the
+      // jim-tennis-deploy 50b60c51 behaviour: no IndexedDB-only ghosts).
+      sendTournament({ tournamentRecord }).then(
+        () => addTournament({ tournamentRecord, tournamentIds, table }),
+        () => {
+          tmxToast({ message: t('common.error'), intent: 'is-danger' });
+        },
+      );
     } else {
       console.log(result);
     }
@@ -32,6 +43,11 @@ function processImportData(data: string, tournamentIds: string[], table: any): v
 }
 
 export function importTournaments({ table }: { table: any }): void {
+  if (!getLoginState()) {
+    tmxToast({ message: t('toasts.notLoggedIn'), intent: 'is-warning' });
+    return;
+  }
+
   const tournamentIds = table.getData().map((t: any) => t.tournamentId);
 
   if (platform.canAccessFileSystem() && platform.showOpenDialog && platform.readFile) {

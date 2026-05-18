@@ -115,7 +115,10 @@ export function connectSocket(callback?: () => void): void {
   if (oi.socket) {
     slog('[socket] connectSocket called but socket already exists (connected=%s)', oi.socket.connected);
   } else {
-    const socketPath = serverConfig.get().socketPath || process.env.SERVER || globalThis.location.origin;
+    // jim-tennis-deploy: do NOT use process.env.SERVER — on our Caddy-proxied
+    // deployment SERVER is "/api/courthive" which produces an invalid socket
+    // namespace. globalThis.location.origin is the safe fallback. (50b60c51)
+    const socketPath = serverConfig.get().socketPath || globalThis.location.origin;
     const connectionString = `${socketPath}/tmx`;
     slog('[socket] connecting to', connectionString);
     oi.socket = io(connectionString, connectionOptions);
@@ -147,10 +150,14 @@ export function connectSocket(callback?: () => void): void {
     });
     oi.socket.on('exception', (data: any) => {
       console.warn('[socket] server exception:', data);
+      // jim-tennis-deploy (50b60c51): surface auth/server exceptions as a toast
+      tmxToast({ message: data?.message || t('toasts.notLoggedIn'), intent: 'is-warning' });
     });
     oi.socket.on('timestamp', (data: any) => (oi.timestampOffset = Date.now() - data.timestamp));
     oi.socket.on('connect_error', (data: any) => {
       slog('[socket] connect_error:', data?.message ?? data);
+    });
+    oi.socket.io.on('reconnect_failed', () => {
       tmxToast({ message: t('toasts.connectionError'), intent: 'is-danger' });
       disconnectSocket();
     });
@@ -158,13 +165,18 @@ export function connectSocket(callback?: () => void): void {
 }
 
 export function connected(): boolean {
-  return !!oi.socket;
+  return !!oi.socket?.connected;
 }
 
 export function disconnectSocket(): void {
   slog('[socket] disconnectSocket called');
-  oi?.socket?.disconnect();
-  setTimeout(() => delete oi.socket, 1000);
+  // jim-tennis-deploy (50b60c51): immediate cleanup of listeners + reference
+  // to avoid stale-listener leaks across reconnects.
+  if (oi.socket) {
+    oi.socket.removeAllListeners();
+    oi.socket.disconnect();
+    oi.socket = undefined;
+  }
 }
 
 /**
@@ -213,7 +225,7 @@ export function emitTmx({ data, ackCallback }: { data: any; ackCallback?: (ack: 
     socketEmit(messageType, data);
   };
 
-  if (oi.socket) {
+  if (oi.socket?.connected) {
     action();
   } else {
     try {

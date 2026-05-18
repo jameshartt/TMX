@@ -277,9 +277,13 @@ export function editTournament({
       // (re-submits with force: true) instead of a doomed server round-trip.
       submitTournamentDates({ params: { activeDates, startDate, endDate }, submit });
     } else {
+      const state = getLoginState();
+      if (!state?.providerId) {
+        tmxToast({ message: t('toasts.notLoggedIn'), intent: 'is-warning' });
+        return;
+      }
       const result = tournamentEngine.newTournamentRecord({ tournamentName, activeDates, startDate, endDate });
       if (result.success) {
-        const state = getLoginState();
         const newTournamentRecord = tournamentEngine.q.tournament();
         // New tournament: apply the selected TZ immediately (local
         // mutation, pre-provider-sync).
