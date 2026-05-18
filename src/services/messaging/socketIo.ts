@@ -148,7 +148,10 @@ export function connectSocket(callback?: () => void): void {
   if (oi.socket) {
     slog('[socket] connectSocket called but socket already exists (connected=%s)', oi.socket.connected);
   } else {
-    const socketPath = serverConfig.get().socketPath || process.env.SERVER || globalThis.location.origin;
+    // jim-tennis-deploy: do NOT use process.env.SERVER — on our Caddy-proxied
+    // deployment SERVER is "/api/courthive" which produces an invalid socket
+    // namespace. globalThis.location.origin is the safe fallback. (50b60c51)
+    const socketPath = serverConfig.get().socketPath || globalThis.location.origin;
     const connectionString = `${socketPath}/tmx`;
     slog('[socket] connecting to', connectionString);
     oi.socket = io(connectionString, connectionOptions);
@@ -244,8 +247,13 @@ export function socketExists(): boolean {
 
 export function disconnectSocket(): void {
   slog('[socket] disconnectSocket called');
-  oi?.socket?.disconnect();
-  setTimeout(() => delete oi.socket, 1000);
+  // jim-tennis-deploy (50b60c51): immediate cleanup of listeners + reference
+  // to avoid stale-listener leaks across reconnects.
+  if (oi.socket) {
+    oi.socket.removeAllListeners();
+    oi.socket.disconnect();
+    oi.socket = undefined;
+  }
 }
 
 /**
@@ -325,7 +333,7 @@ export function emitTmx({ data, ackCallback }: { data: any; ackCallback?: (ack: 
     socketEmit(messageType, data);
   };
 
-  if (oi.socket) {
+  if (oi.socket?.connected) {
     action();
   } else {
     try {

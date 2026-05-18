@@ -1,6 +1,6 @@
 /**
- * Mutation request handler with server and local execution.
- * Handles tournament modifications with authentication and permission checks.
+ * Mutation request handler — server-only execution.
+ * All mutations go through the server; local engine execution happens after server acknowledgement.
  */
 import { getUserContext, ensureUserContext } from 'services/authentication/getUserContext';
 import { isSessionValid, reportSessionLost } from 'services/session/sessionGuard';
@@ -22,6 +22,7 @@ import { t } from 'i18n';
 import type { MutationMethod, ExecutionResult } from 'types/services';
 
 // constants
+import { SET_TOURNAMENT_DATES } from 'constants/mutationConstants';
 import { SUPER_ADMIN, TOURNAMENT_ENGINE } from 'constants/tmxConstants';
 import { isMutationAllowed } from '@courthive/provider-config';
 import { providerConfig } from 'config/providerConfig';
@@ -115,14 +116,25 @@ export async function mutationRequest(params: MutationParams): Promise<void> {
   if (invalidOffline) return tmxToast({ message: t('toasts.notAllOffline'), intent: 'is-danger' });
 
   const tournamentIds = Object.values(tournamentRecords)?.map((record: any) => record.tournamentId);
-  const providerIds = factory.tools.unique(Object.values(tournamentRecords)?.map(getProviderId)).filter(Boolean);
+  let providerIds = factory.tools.unique(Object.values(tournamentRecords)?.map(getProviderId)).filter(Boolean);
   if (providerIds.length > 1) return tmxToast({ message: t('toasts.multipleProviders'), intent: 'is-danger' });
 
-  const now = Date.now();
-  const inDateRange = Object.values(tournamentRecords).every((record: any) => {
-    const endTime = dayjs(record.endDate).endOf('day').valueOf();
-    return !!(endTime && endTime >= now);
-  });
+  // jim-tennis-deploy (50b60c51): fall back to login-state provider when the
+  // tournament record lacks parentOrganisation. Required by the parks-cup
+  // import pipeline which stages tournaments before assigning a provider.
+  if (!providerIds.length) {
+    const stateProviderId = state?.provider?.organisationId || state?.providerId;
+    if (stateProviderId) providerIds = [stateProviderId];
+  }
+
+  const isDateChange = methods.some((m: any) => m.method === SET_TOURNAMENT_DATES);
+  const now = new Date().getTime();
+  const inDateRange =
+    isDateChange ||
+    Object.values(tournamentRecords).every((record: any) => {
+      const endTime = dayjs(record.endDate).endOf('day').valueOf();
+      return !!(endTime && endTime >= now);
+    });
 
   const mutate = (saveLocal?: boolean) =>
     makeMutation({ offline, methods, factoryEngine, tournamentIds, completion, saveLocal, warmCache });
@@ -136,7 +148,9 @@ export async function mutationRequest(params: MutationParams): Promise<void> {
     );
     return;
   }
-  await mutate(true);
+
+  // No provider and not logged in
+  tmxToast({ message: t('toasts.notLoggedIn'), intent: 'is-warning' });
 }
 
 function queryDateRange({
@@ -209,8 +223,7 @@ async function checkPermissions({
     });
   }
 
-  const saveLocal = !isProvider && !(isSuperAdmin && impersonating);
-  mutate(saveLocal);
+  mutate();
 }
 
 function engineExecution({ factoryEngine, methods }: { factoryEngine: any; methods: any[] }): any {
