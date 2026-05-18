@@ -38,18 +38,17 @@ allowBuilds:
   cypress: false            # large browser binary; e2e via Playwright instead
   electron: false           # ~250MB binary; only needed for desktop mode
 
+# jim-tennis-deploy: upstream's `link:../X` overrides assume sibling repos
+# checked out next to TMX (provider-config, scoringVisualizations,
+# courthive-components, pdf-factory, factory). Removed for the prod deploy
+# build, which fetches all packages from the npm registry instead.
 overrides:
-  '@courthive/provider-config': link:../provider-config
-  '@courthive/scoring-visualizations': link:../scoringVisualizations
   '@xmldom/xmldom': ^0.9.0
   'brace-expansion@1': ^5.0.0
   'brace-expansion@2': ^5.0.0
   'brace-expansion@>=4 <5.0.5': ^5.0.5
-  courthive-components: link:../courthive-components
   follow-redirects: ^1.16.0
-  pdf-factory: link:../pdf-factory
   picomatch: ^4.0.4
   socket.io-parser: ^4.2.6
-  tods-competition-factory: link:../factory
   undici: ^8.0.0
   ws: ^8.20.1
