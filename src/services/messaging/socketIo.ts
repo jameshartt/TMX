@@ -137,6 +137,13 @@ export function connectSocket(callback?: () => void): void {
     // /tmx did not until now). extraHeaders is kept for the polling handshake.
     auth: (cb: (data: { token?: string }) => void) => cb({ token: getToken() ?? undefined }),
     transportOptions: { polling: { extraHeaders: getAuthorization() } },
+    // jim-tennis-deploy (50b60c51): force polling-only. Caddy fronts the
+    // factory-server on HTTP/2, which doesn't support the standard
+    // WebSocket Upgrade handshake — engine.io's WebSocket negotiation
+    // returns 400 and the socket hangs without acks. Pinning to polling
+    // sidesteps the upgrade entirely; mutations + ack callbacks travel
+    // over long-polling HTTP requests, which Caddy proxies cleanly.
+    transports: ['polling'],
     'force new connection': true,
     reconnectionDelay: 1000,
     // A NUMBER, not the string 'Infinity'. socket.io compares
