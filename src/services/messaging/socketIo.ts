@@ -122,11 +122,22 @@ export function connectSocket(callback?: () => void): void {
   if (oi.socket) {
     slog('[socket] connectSocket called but socket already exists (connected=%s)', oi.socket.connected);
   } else {
-    // jim-tennis-deploy: do NOT use process.env.SERVER — on our Caddy-proxied
-    // deployment SERVER is "/api/courthive" which produces an invalid socket
-    // namespace. globalThis.location.origin is the safe fallback. (50b60c51)
-    const socketPath = serverConfig.get().socketPath || globalThis.location.origin;
-    const connectionString = `${socketPath}/tmx`;
+    // jim-tennis-deploy: extract ORIGIN only from socketPath. process.env.SERVER
+    // (and therefore serverConfig.socketPath) is "https://jim.tennis/api/courthive"
+    // on this Caddy-proxied deployment — Caddy strips the prefix when forwarding
+    // REST API calls to factory-server. For socket.io we connect via Caddy's
+    // /socket.io/* route directly, so we must NOT carry the /api/courthive prefix
+    // into the namespace string — otherwise engine.io tries to open namespace
+    // "/api/courthive/tmx" which doesn't exist on the gateway (it lives at /tmx).
+    // (Restores 50b60c51's intent after the upstream rebase regressed it.)
+    const rawSocketPath = serverConfig.get().socketPath || globalThis.location.origin;
+    let socketOrigin = globalThis.location.origin;
+    try {
+      socketOrigin = new URL(rawSocketPath).origin;
+    } catch {
+      // socketPath might be a bare path (legacy) — fall back to window origin
+    }
+    const connectionString = `${socketOrigin}/tmx`;
     slog('[socket] connecting to', connectionString);
     oi.socket = io(connectionString, connectionOptions);
     oi.socket.on('ack', receiveAcknowledgement);
